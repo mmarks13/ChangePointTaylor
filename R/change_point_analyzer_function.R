@@ -437,7 +437,7 @@ change_point_analyzer <- function(x, labels = NA, n_bootstraps = 1000, min_candi
     stop("Invalid min_tbl_conf argument. min_tbl_conf must be a numeric value between 0.5 and 1")
   }
   
-  if(!is.numeric(min_tbl_conf) | !dplyr::between(min_tbl_conf, 0.9,0.999)){
+  if(!is.numeric(CI) | !dplyr::between(CI, 0.9,0.999)){
     stop("Invalid CI argument. CI must be a numeric value between 0.9 and 0.999")
   }
   
