@@ -11,7 +11,8 @@ NULL
 if(getRversion() >= "2.15.1")  utils::globalVariables(c("."))
 
 bootstrap_S_diff <- function(x, n_smpls = 1000){
-
+  # print(paste0("bootstrap_S_diff: ", n_smpls))
+  
   X_bar <- mean.default(x)
   length_x <- length(x)
 
@@ -28,6 +29,8 @@ bootstrap_S_diff <- function(x, n_smpls = 1000){
 
 
 confidence_change_occurred <- function(x, n_bootstraps = 1000){
+  # print(paste0("confidence_change_occurred: ", n_bootstraps))
+  
   #1. First calculate the average
   X_bar <- mean.default(x)
 
@@ -56,6 +59,8 @@ Sm_ix <- function(x){
 
 
 get_change <- function(x, min_conf = 0.5, recursive = T, mthd, level = 1, recursive_call = F, original_indices = NA, n_bootraps = 1000){
+  # print(paste0("get_change: ", n_bootraps))
+  
   if(is.na(original_indices[1]) & !recursive_call){
     # message("no indices passed to function. Assuming all original values were provided...")
     original_x_indices <- 1:length(x)
@@ -128,7 +133,9 @@ get_change_sections <- function(x, change_df, min_conf, mthd, recursive = F,filt
   change_sections <- list()
   change_section_start_stops <- c(0,sorted_initial_change_ixs, length(x))
   change_section_orig_ixs <- list()
+  
   # print(change_section_start_stops)
+  
   for(i in 1:length(change_ixs)){
     change_section_seq <- (change_section_start_stops[i]+1):(change_section_start_stops[i+2])
     change_sections[[i]] <- x[change_section_seq]
@@ -149,7 +156,8 @@ get_change_sections <- function(x, change_df, min_conf, mthd, recursive = F,filt
 }
 
 
-reestimate_changes_by_level <- function(x,df_changes_for_reestimation, min_conf, mthd, levels_to_reestimate){
+reestimate_changes_by_level <- function(x,df_changes_for_reestimation, min_conf, mthd, levels_to_reestimate,nboots){
+  # print(paste("reestimate_changes_by_level:", nboots))
   changes_in_non_reestimation_levels <- df_changes_for_reestimation %>%
     dplyr::filter(!(.data$level %in% c(levels_to_reestimate)))
 
@@ -159,17 +167,17 @@ reestimate_changes_by_level <- function(x,df_changes_for_reestimation, min_conf,
   changes_for_reestimation <- get_change_sections(x,df_changes_for_reestimation, min_conf = min_conf, mthd = mthd, filter_values = levels_to_reestimate, filter_by = "levels")
 
   # print(changes_for_reestimation[c('x','original_indices','recursive','min_conf','mthd')])
-
-  reestimated_changes_df <- purrr::pmap_df(changes_for_reestimation[c('x','original_indices','recursive','min_conf','mthd')],get_change) %>%
+  changes_for_reestimation$n_bootraps <- nboots
+  reestimated_changes_df <- purrr::pmap_df(changes_for_reestimation[c('x','original_indices','recursive','min_conf','mthd','n_bootraps')],get_change) %>%
     dplyr::mutate(level = changes_for_reestimation$level) %>%
     dplyr::bind_rows(changes_in_non_reestimation_levels)
 
   return(reestimated_changes_df)
 }
 
-reestimate_change_level_seq <- function(x,df_changes_for_reestimation, min_conf, mthd, level_sequence){
+reestimate_change_level_seq <- function(x,df_changes_for_reestimation, min_conf, mthd, level_sequence,nboots){
   for(level_to_reestimate in level_sequence){
-    df_changes_for_reestimation <- reestimate_changes_by_level(x,df_changes_for_reestimation, min_conf, mthd, level_to_reestimate) %>%
+    df_changes_for_reestimation <- reestimate_changes_by_level(x,df_changes_for_reestimation, min_conf, mthd, level_to_reestimate,nboots) %>%
       dplyr::filter(complete.cases(.)) #sometimes we lose one due to the min 5 length segment.
   }
   df_changes_for_reestimation %>%
@@ -195,6 +203,7 @@ drop_lowest_change_conf_in_given_level <- function(change_df, drop_level){
 
 
 get_all_changes <- function(x, mthd, labels = NA, n_bootraps = 1000, min_candidate_conf = 0.5, min_tbl_conf = 0.9){
+  # print(paste0("get_all_changes: ", n_bootraps))
   changes_for_reestimation_df <- get_change(x, min_conf = min_candidate_conf, mthd = mthd, n_bootraps = n_bootraps)
   labels_lookup_df <- data.frame('label' = labels, change_ix = 1:length(labels))
 
@@ -246,7 +255,7 @@ get_all_changes <- function(x, mthd, labels = NA, n_bootraps = 1000, min_candida
     }else{
       ### reestimate all change candidates top to bottom ###
       level_sequence_top_to_bottom <- max(changes_for_reestimation_df$level):min(changes_for_reestimation_df$level)
-      changes_for_reestimation_df <- reestimate_change_level_seq(x,changes_for_reestimation_df, min_conf = 0, mthd = mthd, level_sequence_top_to_bottom)
+      changes_for_reestimation_df <- reestimate_change_level_seq(x,changes_for_reestimation_df, min_conf = 0, mthd = mthd, level_sequence_top_to_bottom,nboots = n_bootraps)
     }
 
 
@@ -444,7 +453,7 @@ change_point_analyzer <- function(x, labels = NA, n_bootstraps = 1000, min_candi
   method <-  "MSE"
   
   tryCatch({
-    all_changes_df <- get_all_changes(x, mthd = method, labels, min_candidate_conf = min_candidate_conf,min_tbl_conf = min_tbl_conf)
+    all_changes_df <- get_all_changes(x, mthd = method, labels, min_candidate_conf = min_candidate_conf,min_tbl_conf = min_tbl_conf, n_bootraps = n_bootstraps)
     #if there aren't any changes return that.
     if(nrow(all_changes_df)==0){
       data.frame(change_ix = NA, label = NA, CI_init = NA
